@@ -1,128 +1,104 @@
-# AI Internship Projects — 2026
+# Banking RAG System
 
-This repository contains the projects, experiments, and technical studies I completed during my Artificial Intelligence internship.
+A Retrieval-Augmented Generation (RAG) system developed during my AI internship to provide grounded answers to banking and insurance-related questions.
 
 ## Overview
 
-During the internship, I worked on data analysis, AI applications, API integration, prompt engineering, text classification, embeddings, and error analysis using Python and modern AI tools.
+This project combines semantic embeddings, ChromaDB, and an LLM to retrieve relevant information from a structured banking knowledge base and generate context-aware answers.
 
-## Tasks
+## RAG Pipeline
 
-### Task 1 — Data Analysis
-
-Performed exploratory data analysis on the BankChurners dataset using Python.
-
-Topics covered:
-
-* Data loading and preprocessing
-* Dataset structure and statistics
-* Numerical and categorical variable analysis
-* Data visualization
-* Basic exploratory data analysis with Pandas and NumPy
-
-### Task 2 — AI Application
-
-Developed and tested a basic AI application using Python.
-
-The task focused on understanding how AI-based applications can process user input and generate responses.
-
-### Task 3 — OpenAI API Integration
-
-Implemented API-based AI interaction using Python.
-
-Technologies and concepts:
-
-* OpenAI API
-* Responses API
-* `gpt-5-mini`
-* Environment variables
-* `.env` configuration
-* API request handling
-* Error handling
-
-The project also included integration with an exchange-rate API to practice working with external APIs.
-
-### Task 4 — Prompt Engineering
-
-Studied and experimented with prompt engineering techniques.
-
-The task focused on improving the quality and consistency of LLM responses through different prompt structures and instructions.
-
-### Task 5 — AI Application and Classification
-
-Developed and tested an AI-based application involving classification-related tasks.
-
-The work included experimenting with model inputs, outputs, and structured results.
-
-### Task 6 — Embeddings and Text Classification
-
-Worked with the Banking77 dataset and sentence embeddings for intent classification.
-
-Topics covered:
-
-* Banking77 intent classification
-* Dataset preparation
-* Label mapping
-* Sentence embeddings
-* Similarity analysis
-* Test embeddings
-* Confusion analysis
-* Error analysis
-
-The `sentence-transformers` approach was used to transform text into numerical vector representations and analyze semantic similarity between messages.
+User Question
+→ Query Preprocessing
+→ Embedding
+→ ChromaDB Retrieval
+→ Context Filtering
+→ LLM Generation
+→ Grounded Answer
 
 ## Technologies
 
-* Python
-* Pandas
-* NumPy
-* Requests
-* OpenAI API
-* Sentence Transformers
-* Machine Learning
-* Natural Language Processing (NLP)
-* Prompt Engineering
-* Text Embeddings
-* Git & GitHub
+- Python
+- Sentence Transformers
+- all-MiniLM-L6-v2
+- ChromaDB
+- OpenAI API
+- GPT-5-mini
+- Pandas
+
+## Dataset
+
+The knowledge base consists of structured banking and insurance question-answer data and chapter-end questions.
+
+A total of 1,322 documents were indexed in ChromaDB.
+
+## Retrieval Evaluation
+
+The retrieval pipeline was evaluated progressively:
+
+| Method | Top-1 | Top-3 | Top-5 |
+|---|---:|---:|---:|
+| Baseline | 26.25% | 42.50% | 51.25% |
+| Metadata Filtering | 60.00% | 76.25% | 80.00% |
+| Query Preprocessing | **65.00%** | **77.50%** | 78.75% |
+| Same-Model Reranking | 65.00% | 77.50% | 78.75% |
+
+Query preprocessing currently provides the best Top-1 retrieval performance.
+
+## Grounding
+
+The system includes a grounding mechanism to prevent unsupported answers.
+
+When relevant information cannot be found in the knowledge base, the system responds:
+
+> "Bu bilgi bilgi tabanında bulunamadı."
+
+This helps reduce hallucinated answers.
+
+## Current Status
+
+Completed:
+
+- Data analysis and quality checks
+- Data preparation
+- Embedding generation
+- ChromaDB vector database
+- Semantic retrieval
+- Metadata filtering
+- Query preprocessing
+- Retrieval evaluation
+- Error analysis
+- Threshold analysis
+- RAG answer generation
+- Grounding tests
+- Initial reranking experiment
+
+Planned:
+
+- Multilingual cross-encoder reranking
+- Retrieval performance optimization
+- Improved prompt and context selection
+- Gradio-based user interface
+- Final system evaluation
 
 ## Project Structure
 
 ```text
-ai-internship-2026/
-│
-├── task1_veri_analizi/
-│   └── task1.py
-│
-├── task2_ai_uygulama/
-│   └── promt_test.py
-│
-├── task3_openai_api/
-│   └── task3.py
-│
-├── task4.py
-├── task5.py
-├── task5_app.py
-│
-├── task6_embedding/
-│   ├── task6_confusion_analysis.py
-│   ├── task6_create_embeddings.py
-│   ├── task6_dataset.py
-│   ├── task6_embedding_test.py
-│   ├── task6_error_analysis.py
-│   ├── task6_label_mapping.py
-│   ├── task6_similarity.py
-│   └── task6_test_embeddings.py
-│
+banking-rag-system/
+├── README.md
 ├── .gitignore
-└── README.md
-```
+├── task7_data_analysis.py
+├── task7_prepare_data.py
+├── task7_create_chroma.py
+├── task7_retrieval_test.py
+├── task7_retrieval_evaluation.py
+├── task7_retrieval_evaluation_filtered.py
+├── task7_query_preprocessing.py
+├── task7_rag_generation.py
+├── task7_rag_grounding_test.py
+├── task7_threshold_analysis.py
+├── task7_reranking.py
+└── task7_retrieval_error_analysis.py
 
-## Security
-
-API keys and sensitive data are stored using environment variables and are not included in this repository.
-
-Datasets and generated embedding files are also excluded from version control where appropriate.
-
-## Purpose
-
-The purpose of this repository is to document my technical learning and practical development experience during my AI internship, while providing examples of the concepts and tools I worked with throughout the internship.
+Status
+🚧 Work in progress.
