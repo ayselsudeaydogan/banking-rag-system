@@ -19,12 +19,12 @@ User Question
 ## Technologies
 
 - Python
-- Sentence Transformers
 - all-MiniLM-L6-v2
 - ChromaDB
 - OpenAI API
 - GPT-5-mini
 - Pandas
+- Sentence Transformers
 
 ## Dataset
 
