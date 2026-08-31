@@ -1,6 +1,7 @@
 import os
 import html
 from pathlib import Path
+from uuid import uuid4
 
 import streamlit as st
 import chromadb
@@ -10,6 +11,10 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from langfuse import get_client, propagate_attributes
+
+load_dotenv()
+langfuse = get_client()
 
 
 # ============================================================
@@ -482,7 +487,6 @@ div[data-testid="stFeedback"] button:hover svg {
 @st.cache_resource
 def load_models():
 
-    load_dotenv()
 
     api_key = os.getenv("OPENAI_API_KEY")
 
@@ -603,26 +607,35 @@ def preprocess_question(question):
 
 def generate_queries(question):
 
-    processed = preprocess_question(question)
+    with langfuse.start_as_current_observation(
+        as_type="span",
+        name="query-generation",
+        input={"question": question}
+    ) as observation:
 
-    queries = [
-        processed,
-        question,
-        f"{processed} temel bilgi",
-        f"{processed} açıklaması",
-        f"{processed} cevabı"
-    ]
+        processed = preprocess_question(question)
 
-    unique_queries = []
+        queries = [
+            processed,
+            question,
+            f"{processed} temel bilgi",
+            f"{processed} açıklaması",
+            f"{processed} cevabı"
+        ]
 
-    for query in queries:
+        unique_queries = []
 
-        query = query.strip()
+        for query in queries:
+            query = query.strip()
 
-        if query and query not in unique_queries:
-            unique_queries.append(query)
+            if query and query not in unique_queries:
+                unique_queries.append(query)
 
-    return unique_queries
+        observation.update(
+            output={"queries": unique_queries}
+        )
+
+        return unique_queries
 
 
 # ============================================================
@@ -634,34 +647,52 @@ def rerank_documents(question, documents):
     if not documents:
         return []
 
-    pairs = [
-        [question, document]
-        for document in documents
-    ]
+    with langfuse.start_as_current_observation(
+        as_type="span",
+        name="reranking",
+        input={
+            "question": question,
+            "candidate_count": len(documents)
+        }
+    ) as observation:
 
-    inputs = reranker_tokenizer(
-        pairs,
-        padding=True,
-        truncation=True,
-        max_length=512,
-        return_tensors="pt"
-    )
+        pairs = [
+            [question, document]
+            for document in documents
+        ]
 
-    with torch.no_grad():
-
-        outputs = reranker_model(
-            **inputs
+        inputs = reranker_tokenizer(
+            pairs,
+            padding=True,
+            truncation=True,
+            max_length=512,
+            return_tensors="pt"
         )
 
-    scores = outputs.logits.view(-1).tolist()
+        with torch.no_grad():
+            outputs = reranker_model(
+                **inputs
+            )
 
-    ranked = sorted(
-        zip(scores, documents),
-        key=lambda x: x[0],
-        reverse=True
-    )
+        scores = outputs.logits.view(-1).tolist()
 
-    return ranked
+        ranked = sorted(
+            zip(scores, documents),
+            key=lambda x: x[0],
+            reverse=True
+        )
+
+        observation.update(
+            output={
+                "candidate_count": len(documents),
+                "top_scores": [
+                    float(score)
+                    for score, _ in ranked[:3]
+                ]
+            }
+        )
+
+        return ranked
 
 
 # ============================================================
@@ -670,37 +701,56 @@ def rerank_documents(question, documents):
 
 def retrieve(question, top_k=3):
 
-    queries = generate_queries(question)
+    with langfuse.start_as_current_observation(
+        as_type="retriever",
+        name="retrieval",
+        input={
+            "question": question,
+            "top_k": top_k
+        }
+    ) as observation:
 
-    candidate_documents = []
+        queries = generate_queries(question)
 
-    for query in queries:
+        candidate_documents = []
 
-        query_embedding = embedding_model.encode(
-            query
-        ).tolist()
+        for query in queries:
 
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=30,
-            where={
-                "source": "question_answers"
+            query_embedding = embedding_model.encode(
+                query
+            ).tolist()
+
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=30,
+                where={
+                    "source": "question_answers"
+                }
+            )
+
+            for document in results["documents"][0]:
+
+                if document not in candidate_documents:
+                    candidate_documents.append(document)
+
+        candidate_documents = candidate_documents[:30]
+
+        ranked = rerank_documents(
+            question,
+            candidate_documents
+        )
+
+        final_results = ranked[:top_k]
+
+        observation.update(
+            output={
+                "query_count": len(queries),
+                "candidate_count": len(candidate_documents),
+                "returned_count": len(final_results)
             }
         )
 
-        for document in results["documents"][0]:
-
-            if document not in candidate_documents:
-                candidate_documents.append(document)
-
-    candidate_documents = candidate_documents[:30]
-
-    ranked = rerank_documents(
-        question,
-        candidate_documents
-    )
-
-    return ranked[:top_k]
+        return final_results
 
 
 # ============================================================
@@ -709,31 +759,43 @@ def retrieve(question, top_k=3):
 
 def generate_answer(question):
 
-    results = retrieve(question)
+    with langfuse.start_as_current_observation(
+        as_type="span",
+        name="rag-generation",
+        input={"question": question}
+    ) as trace:
 
-    documents = [
-        document
-        for score, document in results
-    ]
+        results = retrieve(question)
 
-    source_items = [
-        {
-            "text": document,
-            "score": float(score)
-        }
-        for score, document in results
-    ]
+        documents = [
+            document
+            for score, document in results
+        ]
 
-    if not documents:
+        source_items = [
+            {
+                "text": document,
+                "score": float(score)
+            }
+            for score, document in results
+        ]
 
-        return (
-            "Bu bilgi bilgi tabanında bulunamadı.",
-            []
-        )
+        if not documents:
 
-    context = "\n\n".join(documents)
+            answer = "Bu bilgi bilgi tabanında bulunamadı."
 
-    prompt = f"""
+            trace.update(
+                output={
+                    "answer": answer,
+                    "sources": []
+                }
+            )
+
+            return answer, []
+
+        context = "\\n\\n".join(documents)
+
+        prompt = f"""
 Sen Türkçe çalışan bir finans ve bankacılık bilgi asistanısın.
 
 SADECE aşağıdaki KAYNAK BİLGİYİ kullan.
@@ -757,15 +819,41 @@ KULLANICI SORUSU:
 Kısa, açık ve doğru bir Türkçe cevap ver.
 """
 
-    response = openai_client.responses.create(
-        model="gpt-5-mini",
-        input=prompt
-    )
+        with langfuse.start_as_current_observation(
+            as_type="generation",
+            name="llm-generation",
+            input={
+                "question": question,
+                "context": context,
+                "model": "gpt-5-mini"
+            }
+        ) as generation:
 
-    return (
-        response.output_text.strip(),
-        source_items
-    )
+            response = openai_client.responses.create(
+                model="gpt-5-mini",
+                input=prompt
+            )
+
+            answer = response.output_text.strip()
+
+            generation.update(
+                output={
+                    "answer": answer
+                },
+                model="gpt-5-mini"
+            )
+
+        trace.update(
+            output={
+                "answer": answer,
+                "sources": source_items
+            }
+        )
+
+        return (
+            answer,
+            source_items
+        )
 
 
 # ============================================================
@@ -777,6 +865,9 @@ if "messages" not in st.session_state:
 
 if "selected_question" not in st.session_state:
     st.session_state.selected_question = None
+
+if "langfuse_session_id" not in st.session_state:
+    st.session_state.langfuse_session_id = str(uuid4())
 
 
 # ============================================================
@@ -1782,10 +1873,12 @@ if question:
     with st.spinner(
         "Bilgi tabanında aranıyor..."
     ):
-
-        answer, sources = generate_answer(
-            question
-        )
+        with propagate_attributes(
+            session_id=st.session_state.langfuse_session_id
+        ):
+            answer, sources = generate_answer(
+                question
+            )
 
     st.session_state.messages.append(
         {
